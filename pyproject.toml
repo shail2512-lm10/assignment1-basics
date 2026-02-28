@@ -19,6 +19,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "wandb>=0.19.7",
     "ty>=0.0.1a16",
+    "jupyterlab>=4.5.4",
 ]
 
 [build-system]
@@ -34,8 +35,10 @@ package = true
 python-preference = "managed"
 
 [tool.pytest.ini_options]
-log_cli = true
-log_cli_level = "WARNING"
+# log_cli = true
+# log_cli_level = "WARNING"
+log_file = "logs.log"
+log_file_level = "DEBUG"
 addopts = "-s"
 
 [tool.ruff]
