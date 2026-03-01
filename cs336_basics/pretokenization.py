@@ -6,6 +6,7 @@ from multiprocessing import Pool
 from functools import partial
 from collections import Counter
 import pathlib
+from collections.abc import Iterable, Iterator
 
 Vocab = dict[int, bytes]
 Merges = list[tuple[bytes, bytes]]
@@ -23,40 +24,52 @@ GPT2_REGEX = re.compile(
 
 class PreTokenizer:
     @staticmethod
-    def find_chunk_boundaries(
-        file: BinaryIO,
-        desired_num_chunks: int,
-        split_special_token: bytes,
+    def _find_chunk_boundaries(
+        file: BinaryIO | None = None,
+        desired_num_chunks: int = 4,
+        split_special_token: bytes | str = b"",
+        text: str | None = None
     ) -> list[int]:
         """
         Chunk the file into parts that can be counted independently.
         May return fewer chunks if the boundaries end up overlapping.
         """
-        assert isinstance(split_special_token, bytes), "Must represent special token as a bytestring"
+        # assert isinstance(split_special_token, bytes), "Must represent special token as a bytestring"
 
         # Get total file size in bytes
-        file.seek(0, os.SEEK_END)
-        file_size = file.tell()
-        file.seek(0)
+        if file is not None:
+            file.seek(0, os.SEEK_END)
+            total_size = file.tell()
+            file.seek(0)
 
-        chunk_size = file_size // desired_num_chunks
+            chunk_size = total_size // desired_num_chunks
+
+        if text is not None:
+            total_size = len(text)
+            chunk_size = total_size // desired_num_chunks
+        
 
         # Initial guesses for chunk boundary locations, uniformly spaced
         # Chunks start on previous index, don't include last index
         chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
-        chunk_boundaries[-1] = file_size
+        chunk_boundaries[-1] = total_size
 
         mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
 
         for bi in range(1, len(chunk_boundaries) - 1):
             initial_position = chunk_boundaries[bi]
-            file.seek(initial_position)  # Start at boundary guess
+            if file is not None:
+                file.seek(initial_position) # Start at boundary guess
             while True:
-                mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
+                if file is not None:
+                    mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
+
+                if text is not None:
+                    mini_chunk = text[initial_position:initial_position + mini_chunk_size]
 
                 # If EOF, this boundary should be at the end of the file
-                if mini_chunk == b"":
-                    chunk_boundaries[bi] = file_size
+                if mini_chunk == b"" or mini_chunk == "":
+                    chunk_boundaries[bi] = total_size
                     break
 
                 # Find the special token in the mini chunk
@@ -70,7 +83,7 @@ class PreTokenizer:
         return sorted(set(chunk_boundaries))
 
     @staticmethod
-    def pretokenize_chunk(args: tuple[str, int, int, list[str]]) -> WordCounts:
+    def _pretokenize_chunk_train(args: tuple[str, int, int, list[str]]) -> WordCounts:
         """Process a single chunk of the file."""
         input_path, start, end, special_tokens = args
 
@@ -99,13 +112,13 @@ class PreTokenizer:
         return word_count
 
     @staticmethod
-    def pretokenize(
+    def pretokenize_train(
         input_path: str, special_tokens: list[str], desired_num_chunks: int, num_workers: int | None = None
     ) -> tuple[Words, WordFreq, PairCounts, PairToWords]:
         """Pre-tokenize input, returning words, frequencies, pair counts, and inverted index."""
         split_token = special_tokens[0].encode("utf-8") if special_tokens else b"\n"
         with open(input_path, "rb") as f:
-            boundaries = PreTokenizer.find_chunk_boundaries(f, desired_num_chunks, split_token)
+            boundaries = PreTokenizer._find_chunk_boundaries(file=f, desired_num_chunks=desired_num_chunks, split_special_token=split_token)
 
         chunks = [
             (input_path, boundaries[i], boundaries[i + 1], special_tokens)
@@ -113,12 +126,12 @@ class PreTokenizer:
         ]
 
         with Pool(num_workers) as pool:
-            results = pool.map(PreTokenizer.pretokenize_chunk, chunks)
+            results = pool.map(PreTokenizer._pretokenize_chunk_train, chunks)
 
-        return PreTokenizer.merge_word_counts(results)
+        return PreTokenizer._merge_word_counts(results)
     
     @staticmethod
-    def merge_word_counts(
+    def _merge_word_counts(
         counts_list: list[WordCounts],
     ) -> tuple[Words, WordFreq, PairCounts, PairToWords]:
         """Merge multiple WordCounts dicts into one, building pair counts and inverted index."""
@@ -155,17 +168,65 @@ class PreTokenizer:
                 pair_to_words[pair].add(word_id)
 
         return words, word_freq, pair_counts, pair_to_words
+    
+
+    @staticmethod
+    def pretokenize_encode(text: str, special_tokens: list[str], desired_num_chunks: int, num_workers: int | None = None) -> list[bytes]:
+        """Pre-tokenize a single string into a list of byte tokens."""
+        split_token = "<|endoftext|>"
+        boundaries = PreTokenizer._find_chunk_boundaries(text=text, desired_num_chunks=desired_num_chunks, split_special_token=split_token)
+
+        chunks = [
+            (text[boundaries[i]:boundaries[i + 1]], special_tokens)
+            for i in range(len(boundaries) - 1)
+        ]
+
+        with Pool(processes=num_workers) as pool:
+            results = pool.map(PreTokenizer._pretokenize_chunk_encode, chunks)
+
+        pre_tokenized_word_bytes = []
+        for result in results:
+            pre_tokenized_word_bytes.extend(result)
+        return pre_tokenized_word_bytes
+    
+
+    @staticmethod
+    def _pretokenize_chunk_encode(args: tuple[str, list[str]]) -> list[bytes]:
+        """Pre-tokenize a single chunk into a list of byte tokens."""
+        chunk, special_tokens = args
+
+        if special_tokens:
+            pattern = (
+                r"(" + "|".join(re.escape(token) for token in special_tokens) + r")"
+            )
+            corpus_split = re.split(pattern, chunk)
+            corpus_split = [x for x in corpus_split if x]
+
+        chunk_pre_tokenized_word_bytes = []
+        for corpus in corpus_split:
+            if corpus in special_tokens:
+                chunk_pre_tokenized_word_bytes.append(corpus.encode("utf-8"))
+                continue
+            matches = re.finditer(GPT2_REGEX, corpus)
+            for m in matches:
+                chunk_pre_tokenized_word_bytes.append(m.group().encode("utf-8"))
+
+        # return the list so multiprocessing can collect results
+        return chunk_pre_tokenized_word_bytes
 
 
 if __name__ == "__main__":
     input_path = pathlib.Path(__file__).parent.parent / "tests/fixtures/tinystories_sample.txt"
     special_tokens = ["<|endoftext|>"]
-    words, word_freq, pair_counts, pair_to_words = PreTokenizer.pretokenize(input_path, special_tokens, 4)
-    print(words)
-    print("--------------------")
-    print(word_freq)
-    print("---------------")
-    print(pair_counts)
-    print("---------------")
-    print(pair_to_words)
+    text = input_path.read_text(encoding="utf-8")
+    # words, word_freq, pair_counts, pair_to_words = PreTokenizer.pretokenize_train(input_path, special_tokens, 4)
+    word_bytes = PreTokenizer.pretokenize_encode(text, special_tokens, 4)
+    print(word_bytes)
+    # print(words)
+    # print("--------------------")
+    # print(word_freq)
+    # print("---------------")
+    # print(pair_counts)
+    # print("---------------")
+    # print(pair_to_words)
     
