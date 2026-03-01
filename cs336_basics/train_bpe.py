@@ -1,16 +1,11 @@
 """BPE implementation with inverted index for faster merges."""
 
 from __future__ import annotations
-import os
-from typing import BinaryIO
-from multiprocessing import Pool
 import pathlib
 import json
-from functools import lru_cache
 from cs336_basics.utils import get_mappings
 from cs336_basics.pretokenization import PreTokenizer
 
-import regex
 
 Vocab = dict[int, bytes]
 Merges = list[tuple[bytes, bytes]]
@@ -21,11 +16,6 @@ Words = list[list[bytes]]
 WordFreq = list[int]
 
 WordCounts = dict[tuple[bytes, ...], int]
-
-GPT2_REGEX = regex.compile(
-    r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-)
-
 
 
 class TrainTokenizer:
@@ -69,7 +59,7 @@ class TrainTokenizer:
     
 
     @staticmethod
-    def find_most_frequent_pair(
+    def __find_most_frequent_pair(
         pair_counts: PairCounts,
     ) -> tuple[bytes, bytes] | None:
         """Find the most frequent pair - now O(n) over pairs, not over all tokens."""
@@ -78,12 +68,12 @@ class TrainTokenizer:
         return max(pair_counts, key=lambda pair: (pair_counts[pair], pair[0], pair[1]))
 
     @staticmethod
-    def get_word_pairs(word: list[bytes]) -> list[tuple[bytes, bytes]]:
+    def __get_word_pairs(word: list[bytes]) -> list[tuple[bytes, bytes]]:
         """Get all adjacent pairs in a word."""
         return [(word[i], word[i + 1]) for i in range(len(word) - 1)]
 
     @staticmethod
-    def apply_merge(
+    def __apply_merge(
         words: Words,
         word_freq: WordFreq,
         pair: tuple[bytes, bytes],
@@ -99,7 +89,7 @@ class TrainTokenizer:
             word = words[word_id]
             freq = word_freq[word_id]
 
-            old_pairs = TrainTokenizer.get_word_pairs(word)
+            old_pairs = TrainTokenizer.__get_word_pairs(word)
 
             i = 0
             while i < len(word) - 1:
@@ -109,7 +99,7 @@ class TrainTokenizer:
                 else:
                     i += 1
 
-            new_pairs = TrainTokenizer.get_word_pairs(word)
+            new_pairs = TrainTokenizer.__get_word_pairs(word)
 
             for p in old_pairs:
                 if p == pair:
@@ -135,24 +125,24 @@ class TrainTokenizer:
         special_tokens: list[str],
     ) -> tuple[Vocab, Merges]:
         """Train a BPE tokenizer and return vocabulary and merges."""
-        words, word_freq, pair_counts, pair_to_words = self.pre_tokenizer.pretokenize(input_path, special_tokens, 4)
-        vocab = TrainTokenizer.build_initial_vocab(special_tokens)
+        words, word_freq, pair_counts, pair_to_words = self.pre_tokenizer.pretokenize_train(input_path, special_tokens, 4)
+        vocab = TrainTokenizer.__build_initial_vocab(special_tokens)
         merges: Merges = []
 
         num_merges = vocab_size - len(vocab)
 
         for _ in range(num_merges):
-            best_pair = TrainTokenizer.find_most_frequent_pair(pair_counts)
+            best_pair = TrainTokenizer.__find_most_frequent_pair(pair_counts)
             if best_pair is None:
                 break
             merges.append(best_pair)
             vocab[len(vocab)] = best_pair[0] + best_pair[1]
-            TrainTokenizer.apply_merge(words, word_freq, best_pair, pair_counts, pair_to_words)
+            TrainTokenizer.__apply_merge(words, word_freq, best_pair, pair_counts, pair_to_words)
 
         return vocab, merges
 
     @staticmethod
-    def build_initial_vocab(special_tokens: list[str]) -> Vocab:
+    def __build_initial_vocab(special_tokens: list[str]) -> Vocab:
         """Build initial vocabulary with 256 single bytes + special tokens."""
         vocab = {}
         for special_token in special_tokens:
