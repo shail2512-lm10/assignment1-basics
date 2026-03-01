@@ -3,10 +3,7 @@ import os
 from typing import BinaryIO
 import regex as re
 from multiprocessing import Pool
-from functools import partial
 from collections import Counter
-import pathlib
-from collections.abc import Iterable, Iterator
 
 Vocab = dict[int, bytes]
 Merges = list[tuple[bytes, bytes]]
@@ -94,8 +91,10 @@ class PreTokenizer:
         corpus_split = [chunk]
 
         if special_tokens:
+            # sort tokens by length to prefer longer (overlapping) matches first
+            tokens_sorted = sorted(special_tokens, key=len, reverse=True)
             pattern = (
-                r"(" + "|".join(re.escape(token) for token in special_tokens) + r")"
+                r"(" + "|".join(re.escape(token) for token in tokens_sorted) + r")"
             )
             corpus_split = re.split(pattern, chunk)
             corpus_split = [x for x in corpus_split if x]
@@ -195,19 +194,27 @@ class PreTokenizer:
         """Pre-tokenize a single chunk into a list of byte tokens."""
         chunk, special_tokens = args
 
+        chunk_pre_tokenized_word_bytes = []
+
         if special_tokens:
+            # prefer longer tokens first to handle overlapping cases
+            tokens_sorted = sorted(special_tokens, key=len, reverse=True)
             pattern = (
-                r"(" + "|".join(re.escape(token) for token in special_tokens) + r")"
+                r"(" + "|".join(re.escape(token) for token in tokens_sorted) + r")"
             )
             corpus_split = re.split(pattern, chunk)
             corpus_split = [x for x in corpus_split if x]
 
-        chunk_pre_tokenized_word_bytes = []
-        for corpus in corpus_split:
-            if corpus in special_tokens:
-                chunk_pre_tokenized_word_bytes.append(corpus.encode("utf-8"))
-                continue
-            matches = re.finditer(GPT2_REGEX, corpus)
+            for corpus in corpus_split:
+                if corpus in special_tokens:
+                    chunk_pre_tokenized_word_bytes.append(corpus.encode("utf-8"))
+                    continue
+                matches = re.finditer(GPT2_REGEX, corpus)
+                for m in matches:
+                    chunk_pre_tokenized_word_bytes.append(m.group().encode("utf-8"))
+        else:
+            corpus_split = chunk
+            matches = re.finditer(GPT2_REGEX, corpus_split)
             for m in matches:
                 chunk_pre_tokenized_word_bytes.append(m.group().encode("utf-8"))
 
