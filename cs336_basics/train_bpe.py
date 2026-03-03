@@ -125,7 +125,7 @@ class TrainTokenizer:
         special_tokens: list[str],
     ) -> tuple[Vocab, Merges]:
         """Train a BPE tokenizer and return vocabulary and merges."""
-        words, word_freq, pair_counts, pair_to_words = self.pre_tokenizer.pretokenize_train(input_path, special_tokens, 4)
+        words, word_freq, pair_counts, pair_to_words = self.pre_tokenizer.pretokenize_train(input_path, special_tokens, 4, 4)
         vocab = TrainTokenizer.__build_initial_vocab(special_tokens)
         merges: Merges = []
 
@@ -158,8 +158,8 @@ if __name__ == "__main__":
     parent_path = pathlib.Path(__file__).parent.parent
     train_tokenizer = TrainTokenizer(PreTokenizer)
     vocab, merges = train_tokenizer.train_bpe(
-        input_path=parent_path / "tests/fixtures/corpus.en",
-        vocab_size=500,
+        input_path=parent_path / "data/owt_train.txt",
+        vocab_size=32000,
         special_tokens=["<|endoftext|>"]
     )
     TrainTokenizer.save_vocab_and_merges(parent_path / "data", vocab, merges)

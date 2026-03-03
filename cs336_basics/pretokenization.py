@@ -88,27 +88,24 @@ class PreTokenizer:
             f.seek(start)
             chunk = f.read(end - start).decode("utf-8")
 
-        corpus_split = [chunk]
-
         if special_tokens:
             # sort tokens by length to prefer longer (overlapping) matches first
             tokens_sorted = sorted(special_tokens, key=len, reverse=True)
             pattern = (
                 r"(" + "|".join(re.escape(token) for token in tokens_sorted) + r")"
             )
-            corpus_split = re.split(pattern, chunk)
-            corpus_split = [x for x in corpus_split if x]
+            corpus_split = [x for x in re.split(pattern, chunk) if x]
+        else:
+            corpus_split = [chunk]
 
         chunk_pre_tokenized_texts = []
         for corpus in corpus_split:
             if corpus in special_tokens:
                 continue
             matches = re.finditer(GPT2_REGEX, corpus)
-            for m in matches:
-                chunk_pre_tokenized_texts.extend([m.group().encode("utf-8")])
-        word_count = Counter(chunk_pre_tokenized_texts)
+            chunk_pre_tokenized_texts.extend([m.group().encode("utf-8") for m in matches])
 
-        return word_count
+        return Counter(chunk_pre_tokenized_texts)
 
     @staticmethod
     def pretokenize_train(
