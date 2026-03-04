@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor, LongTensor
 from einops import einsum
-from einx import elementwise, reduce
+from einx import elementwise, reduce, rearrange, flip
 from jaxtyping import Float, Int
 
 
@@ -120,3 +120,48 @@ class SwiGLU(nn.Module):
 
         return self.w2(swiglu)  # down projection
 
+
+class RotaryPositionalEmbedding(nn.Module):
+    def __init__(
+        self,
+        theta: float,
+        d_k: int,
+        max_seq_len: int,
+        device: torch.device | None = None    
+    ):
+        super().__init__()
+        token_idxs = torch.arange(max_seq_len, device=device)
+        theta_values = theta ** (-2 * torch.arange(d_k/2, device=device) / d_k)
+        # one theta value for each pair: total (d_k / 2) pairs
+        
+        # create COS(m.theta) matrix for each token (total "seq" tokens)
+        cos = torch.cos(elementwise("seq, pair -> seq pair", token_idxs, theta_values, op="multiply"))
+        # convert back to (seq, d_k) by copying the values for each pair
+        cos: Float[Tensor, "seq d_k"] = rearrange("seq pair -> seq (pair p)", cos, p=2)
+
+        # create SIN(m.theta) matrix for each token (total "seq" tokens)
+        sin = torch.sin(elementwise("seq, pair -> seq pair", token_idxs, theta_values, op="multiply"))
+        # convert back to (seq, d_k) by copying the values for each pair
+        sin: Float[Tensor, "seq d_k"] = rearrange("seq pair -> seq (pair p)", sin, p=2)
+
+        self.register_buffer("cos", cos, persistent=False)
+        self.register_buffer("sin", sin, persistent=False)
+
+
+    def forward(
+            self,
+            x: Float[Tensor, "... seq d_k"],
+            token_positions: Float[Tensor, "... seq"]
+    ) -> Float[Tensor, "... seq d_k"]:
+
+        in_type = x.dtype
+        x = x.to(torch.float32)
+
+        # Convert x = [1,2,3,4,5,6,7,8] into x_inv = [-2,1,-4,3,-6,5,-8,7]
+        x1 = rearrange("... (pairs p) -> ... pairs p", x, p=2)
+        x2 = flip("... [p]", x1, p=2) * torch.tensor([-1,1])
+        x_inv: Float[Tensor, "... seq d_k"] = rearrange("... pair p -> ... (pair p)", x2)
+
+        rotated = x * self.cos[token_positions] + x_inv * self.sin[token_positions]
+
+        return rotated.to(in_type)
