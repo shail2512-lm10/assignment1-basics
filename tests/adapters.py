@@ -12,8 +12,8 @@ from torch import Tensor
 from cs336_basics.train_bpe import TrainTokenizer
 from cs336_basics.pretokenization import PreTokenizer
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.transformer import Linear, Embedding, RMSNorm, SwiGLU, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, CausalMultiHeadedSelfAttention
-
+from cs336_basics.transformer import Linear, Embedding, RMSNorm, SwiGLU, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, CausalMultiHeadedSelfAttention, TransformerBlock
+from einx import rearrange
 
 def run_linear(
     d_in: int,
@@ -201,7 +201,7 @@ def run_multihead_self_attention_with_rope(
     mhsa.q_proj_weight.weight.data = q_proj_weight
     mhsa.k_proj_weight.weight.data = k_proj_weight
     mhsa.v_proj_weight.weight.data = v_proj_weight
-    mhsa.o_weight.weight.data = o_proj_weight
+    mhsa.o_proj_weight.weight.data = o_proj_weight
 
     return mhsa(in_features)
 
@@ -299,7 +299,30 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    token_positions = torch.arange(in_features.shape[1])
+    token_positions_expanded = rearrange("seq -> batch seq", token_positions, batch=in_features.shape[0])
+
+    transformer_block = TransformerBlock(
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        max_seq_len=max_seq_len,
+        theta=theta,
+        token_positions=token_positions_expanded
+    )
+
+    transformer_block.causal_mhsa.q_proj_weight.weight.data = weights["attn.q_proj.weight"]
+    transformer_block.causal_mhsa.k_proj_weight.weight.data = weights["attn.k_proj.weight"]
+    transformer_block.causal_mhsa.v_proj_weight.weight.data = weights["attn.v_proj.weight"]
+    transformer_block.causal_mhsa.o_proj_weight.weight.data = weights["attn.output_proj.weight"]
+    transformer_block.rmsnorm1.gain.data = weights["ln1.weight"]
+    transformer_block.rmsnorm2.gain.data = weights["ln2.weight"]
+    transformer_block.swiglu.w1.weight.data = weights["ffn.w1.weight"]
+    transformer_block.swiglu.w2.weight.data = weights["ffn.w2.weight"]
+    transformer_block.swiglu.w3.weight.data = weights["ffn.w3.weight"]
+
+    return transformer_block(in_features)
+
 
 
 def run_transformer_lm(
