@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
-from torch import Tensor, LongTensor
+from torch import Tensor
 from einops import einsum
-from einx import elementwise, reduce, rearrange, flip, dot
-from jaxtyping import Float, Int
+from einx import rearrange, dot
+from jaxtyping import Float
 from cs336_basics.transformer import softmax, Linear, RotaryPositionalEmbedding
 
 def scaled_dot_product_attention(
@@ -79,7 +79,8 @@ class CausalMultiHeadedSelfAttention(nn.Module):
 
         output = scaled_dot_product_attention(Q, K, V, causal_mask)
 
+        # Combine values from all the heads (i.e. just reshape)
         O_concat = rearrange("... h seq d_k -> ... seq (h d_k)", output)
 
-        return self.o_weight(O_concat)
+        return self.o_proj_weight(O_concat)
 
