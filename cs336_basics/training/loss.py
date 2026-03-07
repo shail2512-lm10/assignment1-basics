@@ -1,12 +1,11 @@
 import torch
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from torch import Tensor
-from einx import rearrange, reduce
 
 
 def cross_entropy_loss(
         logits: Float[Tensor, "batch_seq vocab"],
-        targets: Float[Tensor, " batch_seq"]
+        targets: Int[Tensor, " batch_seq"]
 ) -> Float[Tensor, ""]:
 
     max_val = torch.max(logits, dim=-1, keepdim=True).values
