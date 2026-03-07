@@ -12,7 +12,7 @@ from torch import Tensor
 from cs336_basics.train_bpe import TrainTokenizer
 from cs336_basics.pretokenization import PreTokenizer
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.transformer import Linear, Embedding, RMSNorm, SwiGLU, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, CausalMultiHeadedSelfAttention, TransformerBlock
+from cs336_basics.transformer import Linear, Embedding, RMSNorm, SwiGLU, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, CausalMultiHeadedSelfAttention, TransformerBlock, TransformerLM
 from einx import rearrange
 
 def run_linear(
@@ -152,10 +152,10 @@ def run_multihead_self_attention(
         implementation with the given QKV projection weights and input features.
     """
     mhsa = CausalMultiHeadedSelfAttention(d_model, num_heads)
-    mhsa.q_proj_weight.weight.data = q_proj_weight
-    mhsa.k_proj_weight.weight.data = k_proj_weight
-    mhsa.v_proj_weight.weight.data = v_proj_weight
-    mhsa.o_weight.weight.data = o_proj_weight
+    mhsa.q_proj.weight.data = q_proj_weight
+    mhsa.k_proj.weight.data = k_proj_weight
+    mhsa.v_proj.weight.data = v_proj_weight
+    mhsa.output_proj.weight.data = o_proj_weight
 
     return mhsa(in_features)
 
@@ -198,10 +198,10 @@ def run_multihead_self_attention_with_rope(
         implementation with the given QKV projection weights and input features.
     """
     mhsa = CausalMultiHeadedSelfAttention(d_model, num_heads, max_seq_len, theta, token_positions)
-    mhsa.q_proj_weight.weight.data = q_proj_weight
-    mhsa.k_proj_weight.weight.data = k_proj_weight
-    mhsa.v_proj_weight.weight.data = v_proj_weight
-    mhsa.o_proj_weight.weight.data = o_proj_weight
+    mhsa.q_proj.weight.data = q_proj_weight
+    mhsa.k_proj.weight.data = k_proj_weight
+    mhsa.v_proj.weight.data = v_proj_weight
+    mhsa.output_proj.weight.data = o_proj_weight
 
     return mhsa(in_features)
 
@@ -311,15 +311,7 @@ def run_transformer_block(
         token_positions=token_positions_expanded
     )
 
-    transformer_block.causal_mhsa.q_proj_weight.weight.data = weights["attn.q_proj.weight"]
-    transformer_block.causal_mhsa.k_proj_weight.weight.data = weights["attn.k_proj.weight"]
-    transformer_block.causal_mhsa.v_proj_weight.weight.data = weights["attn.v_proj.weight"]
-    transformer_block.causal_mhsa.o_proj_weight.weight.data = weights["attn.output_proj.weight"]
-    transformer_block.rmsnorm1.gain.data = weights["ln1.weight"]
-    transformer_block.rmsnorm2.gain.data = weights["ln2.weight"]
-    transformer_block.swiglu.w1.weight.data = weights["ffn.w1.weight"]
-    transformer_block.swiglu.w2.weight.data = weights["ffn.w2.weight"]
-    transformer_block.swiglu.w3.weight.data = weights["ffn.w3.weight"]
+    transformer_block.load_state_dict(weights)
 
     return transformer_block(in_features)
 
@@ -404,7 +396,20 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    token_positions = torch.arange(in_indices.shape[1])
+    token_positions_expanded = rearrange("seq -> batch seq", token_positions, batch=in_indices.shape[0])
+    transformer = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        num_layers=num_layers,
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        theta=rope_theta,
+        token_positions=token_positions_expanded
+    )
+    transformer.load_state_dict(weights)
+    return transformer(in_indices)
 
 
 def run_rmsnorm(
@@ -428,7 +433,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     rmsnorm = RMSNorm(d_model, eps)
-    rmsnorm.load_state_dict({"gain": weights})
+    rmsnorm.load_state_dict({"weight": weights})
     return rmsnorm.forward(in_features)
 
 

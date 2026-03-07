@@ -76,7 +76,7 @@ class RMSNorm(nn.Module):
 
         self.eps = eps
 
-        self.gain: Float[Tensor, " d_model"] = nn.Parameter(
+        self.weight: Float[Tensor, " d_model"] = nn.Parameter(
             torch.ones(d_model, device=device, dtype=dtype)
         )
 
@@ -89,7 +89,7 @@ class RMSNorm(nn.Module):
 
         rms = reduce("... seq d_model -> ... seq", x, op=custom_squared_sum)
 
-        result = elementwise("... seq d_model, ... seq, d_model -> ... seq d_model", x, 1/rms, self.gain, op="multiply")
+        result = elementwise("... seq d_model, ... seq, d_model -> ... seq d_model", x, 1/rms, self.weight, op="multiply")
 
         return result.to(in_dtype)
     

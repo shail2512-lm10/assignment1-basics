@@ -41,10 +41,10 @@ class CausalMultiHeadedSelfAttention(nn.Module):
         self.num_heads = num_heads
         self.token_positions = token_positions
 
-        self.q_proj_weight = Linear(d_model, d_model, device=device, dtype=dtype)
-        self.k_proj_weight = Linear(d_model, d_model, device=device, dtype=dtype)
-        self.v_proj_weight = Linear(d_model, d_model, device=device, dtype=dtype)
-        self.o_proj_weight = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.q_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.k_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.v_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.output_proj = Linear(d_model, d_model, device=device, dtype=dtype)
 
         if theta and max_seq_len is not None:
             self.rope = RotaryPositionalEmbedding(theta=theta, d_k=self.d_k, max_seq_len=max_seq_len)
@@ -57,7 +57,7 @@ class CausalMultiHeadedSelfAttention(nn.Module):
 
         # each weight has a shape of d_out x d_in = d_model x d_model
         # Hence combined W shape: 3*d_model x d_model
-        W = torch.concat([self.q_proj_weight.weight, self.k_proj_weight.weight, self.v_proj_weight.weight])
+        W = torch.concat([self.q_proj.weight, self.k_proj.weight, self.v_proj.weight])
         q, k, v = dot(
             "... seq d_in, (num_concats d_out) d_in -> ... seq (num_concats d_out)", x, W, num_concats=3
         ).tensor_split(3, -1)
@@ -82,5 +82,5 @@ class CausalMultiHeadedSelfAttention(nn.Module):
         # Combine values from all the heads (i.e. just reshape)
         O_concat = rearrange("... h seq d_k -> ... seq (h d_k)", output)
 
-        return self.o_proj_weight(O_concat)
+        return self.output_proj(O_concat)
 
