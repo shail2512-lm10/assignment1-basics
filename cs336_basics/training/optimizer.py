@@ -1,10 +1,13 @@
 from collections.abc import Callable
 import torch
+import math
+from collections.abc import Iterable
+from torch import linalg as LA
 
 class AdamW(torch.optim.Optimizer):
     def __init__(
             self,
-            params: torch.nn.Parameter,
+            params: Iterable[torch.nn.Parameter],
             lr: float = 0.001,
             betas: tuple[float, float] = (0.9, 0.999),
             weight_decay: float = 0.01,
@@ -45,3 +48,29 @@ class AdamW(torch.optim.Optimizer):
                 state["v"] = v
 
         return loss
+    
+
+def cosine_lr_schedule(current_t, lr_max, lr_min, total_warmup_t, total_cos_anneal_t):
+    if current_t < total_warmup_t:
+        return lr_max * current_t / total_warmup_t
+    elif current_t <= total_cos_anneal_t:
+        return lr_min + 0.5 * (1 + math.cos((current_t - total_warmup_t) / (total_cos_anneal_t - total_warmup_t) * math.pi)) * (lr_max - lr_min)
+    elif current_t > total_cos_anneal_t:
+        return lr_min
+    
+
+def gradient_clipping(params: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+    eps = 1e-6
+
+    grads = [p.grad.detach() for p in params if p.grad is not None]
+
+    if len(grads) == 0:
+        return torch.tensor(0.0)
+
+    total_norm = LA.matrix_norm(torch.concat(grads), 2)
+    print(total_norm)
+
+    if total_norm > max_l2_norm:
+        # Scale all gradients by the same factor
+        for g in grads:
+            g.mul_(max_l2_norm / (total_norm + eps))
