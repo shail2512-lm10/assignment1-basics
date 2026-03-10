@@ -1,0 +1,75 @@
+# Transformer Model Configuration
+model:
+  vocab_size: 50257
+  d_model: 768
+  num_heads: 12
+  num_layers: 12
+  d_ff: 3072
+  context_length: 1024
+  theta: 10000
+  dropout: 0.1
+
+# Data Loading Configuration
+data:
+  train_data_path: "data/owt_train.txt"
+  valid_data_path: null  # Set to data path for validation
+  batch_size: 32
+  context_length: 512
+  num_workers: 0
+  pin_memory: false
+  shuffle: true
+
+# Optimizer Configuration
+optimizer:
+  name: "adamw"  # Options: adamw, adam, sgd
+  lr: 0.0001
+  betas: [0.9, 0.999]
+  weight_decay: 0.01
+  eps: 1e-8
+
+# Learning Rate Scheduler Configuration
+scheduler:
+  name: "cosine"  # Options: cosine, constant, linear, exponential
+  lr_max: 0.0001
+  lr_min: 0.0
+  warmup_steps: 1000
+  total_steps: 10000
+
+# Training Loop Configuration
+training:
+  max_epochs: 10
+  max_steps: null  # Set to override max_epochs
+  gradient_accumulation_steps: 1
+  gradient_clip_val: 1.0  # Set to null to disable
+  val_check_interval: 100
+  save_interval: 500
+  log_interval: 10
+  device: "cuda"  # Options: cuda, cpu
+  dtype: "float32"  # Options: float32, float16, bfloat16
+  seed: 42
+
+# Checkpoint Configuration
+checkpoint:
+  checkpoint_dir: "checkpoints"
+  save_best_only: false
+  resume_from_checkpoint: null
+  keep_last_n: 3
+
+
+experiment_tracking:
+  enabled: true
+  backend: "wandb,tensorboard"
+  project_name: "cs336-basics"
+  experiment_name: "transformer-lm-training"
+  run_name: "run-001"
+  tags:
+    model: "transformer"
+    dataset: "tinystories"
+    version: "v1"
+  notes: "Training a transformer language model on TinyStories dataset"
+  wandb_entity: null
+  mlflow_tracking_uri: null
+  tensorboard_dir: "runs"
+  log_interval: 10
+  log_model: false
+  log_gradients": false
