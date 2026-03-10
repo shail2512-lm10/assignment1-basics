@@ -1,0 +1,72 @@
+{
+  "model": {
+    "vocab_size": 50257,
+    "d_model": 768,
+    "num_heads": 12,
+    "num_layers": 12,
+    "d_ff": 3072,
+    "context_length": 1024,
+    "theta": 10000,
+    "dropout": 0.1
+  },
+  "data": {
+    "train_data_path": "data/owt_train.txt",
+    "valid_data_path": "data/TinyStoriesV2-GPT4-valid.txt",
+    "batch_size": 32,
+    "context_length": 512,
+    "num_workers": 0,
+    "pin_memory": false,
+    "shuffle": true
+  },
+  "optimizer": {
+    "name": "adamw",
+    "lr": 0.0001,
+    "betas": [0.9, 0.999],
+    "weight_decay": 0.01,
+    "eps": 1e-8
+  },
+  "scheduler": {
+    "name": "cosine",
+    "lr_max": 0.0001,
+    "lr_min": 1e-5,
+    "warmup_steps": 1000,
+    "total_steps": 100000
+  },
+  "training": {
+    "max_epochs": 3,
+    "max_steps": 100000,
+    "gradient_accumulation_steps": 1,
+    "gradient_clip_val": 1.0,
+    "val_check_interval": 500,
+    "save_interval": 5000,
+    "log_interval": 10,
+    "device": "cuda",
+    "dtype": "float32",
+    "seed": 42
+  },
+  "checkpoint": {
+    "checkpoint_dir": "checkpoints",
+    "save_best_only": false,
+    "resume_from_checkpoint": null,
+    "keep_last_n": 3
+  },
+  "experiment_tracking": {
+    "enabled": true,
+    "backend": "wandb,tensorboard",
+    "project_name": "cs336-basics",
+    "experiment_name": "transformer-lm-training",
+    "run_name": "run-001",
+    "tags": {
+      "model": "transformer",
+      "dataset": "tinystories",
+      "version": "v1"
+    },
+    "notes": "Training a transformer language model on TinyStories dataset",
+    "wandb_entity": null,
+    "mlflow_tracking_uri": null,
+    "tensorboard_dir": "runs",
+    "log_interval": 10,
+    "log_model": false,
+    "log_gradients": false
+  }
+}
