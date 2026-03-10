@@ -12,7 +12,6 @@ class TransformerBlock(nn.Module):
             d_ff: int,
             max_seq_len: int | None = None,
             theta: int | None = None,
-            token_positions: Float[Tensor, "... seq"] | None = None,
             device: torch.device | str | None = None,
             dtype: torch.dtype | None = None
     ):
@@ -27,19 +26,18 @@ class TransformerBlock(nn.Module):
             num_heads=num_heads,
             max_seq_len=max_seq_len,
             theta=theta,
-            token_positions=token_positions,
             device=device,
             dtype=dtype
         )
 
     
-    def forward(self, x: Float[Tensor, "... seq d_model"]) -> Float[Tensor, "... seq d_model"]:
+    def forward(self, x: Float[Tensor, "... seq d_model"], token_positions: Float[Tensor, "... seq"] | None = None) -> Float[Tensor, "... seq d_model"]:
 
         # There is no in-place operations on x
         # Nor there is a shape mismatch after the operations
         # So no need to use x.clone() for storing residual
         residual = x
-        y = residual + self.attn(self.ln1(x))
+        y = residual + self.attn(self.ln1(x), token_positions)
 
         residual = y
         out = residual + self.ffn(self.ln2(y))
@@ -57,7 +55,6 @@ class TransformerLM(nn.Module):
             num_heads: int,
             d_ff: int,
             theta: int | None = None,
-            token_positions: Float[Tensor, "... seq"] | None = None,
             device: torch.device | str | None = None,
             dtype: torch.dtype | None = None
     ):
@@ -75,7 +72,6 @@ class TransformerLM(nn.Module):
                     d_ff=d_ff,
                     max_seq_len=context_length,
                     theta=theta,
-                    token_positions=token_positions,
                     device=device,
                     dtype=dtype
                 ) for _ in range(num_layers)
@@ -84,13 +80,14 @@ class TransformerLM(nn.Module):
 
     def forward(
             self,
-            x: Float[Tensor, "... seq"]
+            x: Float[Tensor, "... seq"],
+            token_positions: Float[Tensor, "... seq"] | None = None
     ) -> Float[Tensor, "... seq vocab"]:
         
         x = self.token_embeddings(x)
 
         for layer in self.layers:
-            x = layer(x)
+            x = layer(x, token_positions)
 
         logits = self.lm_head(self.ln_final(x))
 

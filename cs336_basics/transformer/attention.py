@@ -30,7 +30,6 @@ class CausalMultiHeadedSelfAttention(nn.Module):
             num_heads: int,
             max_seq_len: int | None = None,
             theta: int | None = None,
-            token_positions: Float[Tensor, "... seq"] | None = None,
             device: torch.device | None = None,
             dtype: torch.dtype | None = None
     ):
@@ -39,7 +38,6 @@ class CausalMultiHeadedSelfAttention(nn.Module):
         # here d_k = d_v = d_model / num_heads
         self.d_k = d_model // num_heads
         self.num_heads = num_heads
-        self.token_positions = token_positions
 
         self.q_proj = Linear(d_model, d_model, device=device, dtype=dtype)
         self.k_proj = Linear(d_model, d_model, device=device, dtype=dtype)
@@ -52,7 +50,8 @@ class CausalMultiHeadedSelfAttention(nn.Module):
 
     def forward(
             self,
-            x: Float[Tensor, "... seq d_model"]
+            x: Float[Tensor, "... seq d_model"],
+            token_positions: Float[Tensor, "... seq"] | None = None
     ) -> Float[Tensor, "... seq d_model"]:
 
         # each weight has a shape of d_out x d_in = d_model x d_model
@@ -68,8 +67,8 @@ class CausalMultiHeadedSelfAttention(nn.Module):
         V = rearrange("... seq (h d_k) -> ... h seq d_k", v, h=self.num_heads)
 
         # have to expand token_positions for all the heads to process (batch, seq_len) -> (batch, head, seq_len)
-        if self.token_positions is not None:
-            token_positions_expanded = rearrange("... seq -> ... h seq", self.token_positions, h=self.num_heads)
+        if token_positions is not None:
+            token_positions_expanded = rearrange("... seq -> ... h seq", token_positions, h=self.num_heads)
 
             Q = self.rope.forward(Q, token_positions_expanded)
             K = self.rope.forward(K, token_positions_expanded)
