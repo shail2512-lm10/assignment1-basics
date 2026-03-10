@@ -199,13 +199,13 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    mhsa = CausalMultiHeadedSelfAttention(d_model, num_heads, max_seq_len, theta, token_positions)
+    mhsa = CausalMultiHeadedSelfAttention(d_model, num_heads, max_seq_len, theta)
     mhsa.q_proj.weight.data = q_proj_weight
     mhsa.k_proj.weight.data = k_proj_weight
     mhsa.v_proj.weight.data = v_proj_weight
     mhsa.output_proj.weight.data = o_proj_weight
 
-    return mhsa(in_features)
+    return mhsa(in_features, token_positions)
 
 
 def run_rope(
@@ -309,13 +309,12 @@ def run_transformer_block(
         num_heads=num_heads,
         d_ff=d_ff,
         max_seq_len=max_seq_len,
-        theta=theta,
-        token_positions=token_positions_expanded
+        theta=theta
     )
 
     transformer_block.load_state_dict(weights)
 
-    return transformer_block(in_features)
+    return transformer_block(in_features, token_positions_expanded)
 
 
 
@@ -407,11 +406,10 @@ def run_transformer_lm(
         d_model=d_model,
         num_heads=num_heads,
         d_ff=d_ff,
-        theta=rope_theta,
-        token_positions=token_positions_expanded
+        theta=rope_theta
     )
     transformer.load_state_dict(weights)
-    return transformer(in_indices)
+    return transformer(in_indices, token_positions_expanded)
 
 
 def run_rmsnorm(
