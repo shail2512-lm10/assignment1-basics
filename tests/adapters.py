@@ -14,7 +14,8 @@ from cs336_basics.pretokenization import PreTokenizer
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.transformer import Linear, Embedding, RMSNorm, SwiGLU, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, CausalMultiHeadedSelfAttention, TransformerBlock, TransformerLM
 from einx import rearrange
-from cs336_basics.training import cross_entropy_loss, AdamW, cosine_lr_schedule, gradient_clipping
+from cs336_basics.training import cross_entropy_loss, AdamW, cosine_lr_schedule, gradient_clipping, load_checkpoint, save_checkpoint
+from cs336_basics.training.data import get_batch_dataloader
 
 def run_linear(
     d_in: int,
@@ -472,7 +473,17 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    dataloader = get_batch_dataloader(
+        data=dataset,
+        batch_size=batch_size,
+        context_length=context_length,
+        device=device,
+        shuffle=True,  # Random sampling of batches
+    )
+    
+    # Get the first (and only needed) batch from the dataloader
+    inputs, targets = next(iter(dataloader))
+    return inputs, targets
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -572,7 +583,7 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    return save_checkpoint(model, optimizer, iteration, out)
 
 
 def run_load_checkpoint(
@@ -593,7 +604,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
+    return load_checkpoint(src, model, optimizer)
 
 
 def get_tokenizer(
