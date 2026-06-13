@@ -2,9 +2,17 @@ import torch
 import torch.nn as nn
 from torch import Tensor, LongTensor
 from einops import einsum
-from einx import elementwise, reduce, rearrange, flip
+from einx import flip
+import einx
 from jaxtyping import Float, Int
 
+
+def multiply_op(x, y, z=None):
+    if z is not None:
+        return x * y * z
+    return x * y
+
+elementwise_multiply_einop = einx.torch.adapt_numpylike_elementwise(op=multiply_op)
 
 class Linear(nn.Module):
     def __init__(
@@ -86,10 +94,12 @@ class RMSNorm(nn.Module):
 
         def custom_squared_sum(z: Tensor, axis) -> Tensor:
             return torch.sqrt(torch.mean(z**2, dim=axis) + self.eps)
+        
+        einop_ss = einx.torch.adapt_numpylike_reduce(op=custom_squared_sum)
 
-        rms = reduce("... seq d_model -> ... seq", x, op=custom_squared_sum)
+        rms = einop_ss("... seq d_model -> ... seq", x)
 
-        result = elementwise("... seq d_model, ... seq, d_model -> ... seq d_model", x, 1/rms, self.weight, op="multiply")
+        result = elementwise_multiply_einop("... seq d_model, ... seq, d_model -> ... seq d_model", x, 1/rms, self.weight)
 
         return result.to(in_dtype)
     
@@ -115,7 +125,7 @@ class SwiGLU(nn.Module):
 
         up_proj2 = self.w3(x)
 
-        swiglu = elementwise("... seq dff, ... seq dff", silu, up_proj2, op="multiply")
+        swiglu = elementwise_multiply_einop("... seq dff, ... seq dff", silu, up_proj2)
         # glu = silu * up_proj2
 
         return self.w2(swiglu)  # down projection
@@ -135,14 +145,14 @@ class RotaryPositionalEmbedding(nn.Module):
         # one theta value for each pair: total (d_k / 2) pairs
         
         # create COS(m.theta) matrix for each token (total "seq" tokens)
-        cos = torch.cos(elementwise("seq, pair -> seq pair", token_idxs, theta_values, op="multiply"))
+        cos = torch.cos(elementwise_multiply_einop("seq, pair -> seq pair", token_idxs, theta_values))
         # convert back to (seq, d_k) by copying the values for each pair
-        cos: Float[Tensor, "seq d_k"] = rearrange("seq pair -> seq (pair p)", cos, p=2)
+        cos: Float[Tensor, "seq d_k"] = einx.id("seq pair -> seq (pair p)", cos, p=2)
 
         # create SIN(m.theta) matrix for each token (total "seq" tokens)
-        sin = torch.sin(elementwise("seq, pair -> seq pair", token_idxs, theta_values, op="multiply"))
+        sin = torch.sin(elementwise_multiply_einop("seq, pair -> seq pair", token_idxs, theta_values))
         # convert back to (seq, d_k) by copying the values for each pair
-        sin: Float[Tensor, "seq d_k"] = rearrange("seq pair -> seq (pair p)", sin, p=2)
+        sin: Float[Tensor, "seq d_k"] = einx.id("seq pair -> seq (pair p)", sin, p=2)
 
         self.register_buffer("cos", cos, persistent=False)
         self.register_buffer("sin", sin, persistent=False)
@@ -158,9 +168,9 @@ class RotaryPositionalEmbedding(nn.Module):
         x = x.to(torch.float32)
 
         # Convert x = [1,2,3,4,5,6,7,8] into x_inv = [-2,1,-4,3,-6,5,-8,7]
-        x1 = rearrange("... (pairs p) -> ... pairs p", x, p=2)
+        x1 = einx.id("... (pairs p) -> ... pairs p", x, p=2)
         x2 = flip("... [p]", x1, p=2) * torch.tensor([-1,1])
-        x_inv: Float[Tensor, "... seq d_k"] = rearrange("... pair p -> ... (pair p)", x2)
+        x_inv: Float[Tensor, "... seq d_k"] = einx.id("... pair p -> ... (pair p)", x2)
 
         # for token position m:
         # rotated_x1 = x1cos(m.theta) - x2sin(m.theta)

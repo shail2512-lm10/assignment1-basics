@@ -13,7 +13,7 @@ from cs336_basics.train_bpe import TrainTokenizer
 from cs336_basics.pretokenization import PreTokenizer
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.transformer import Linear, Embedding, RMSNorm, SwiGLU, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, CausalMultiHeadedSelfAttention, TransformerBlock, TransformerLM
-from einx import rearrange
+import einx
 from cs336_basics.training import cross_entropy_loss, AdamW, cosine_lr_schedule, gradient_clipping, load_checkpoint, save_checkpoint
 from cs336_basics.training.data import get_batch_dataloader
 
@@ -302,7 +302,7 @@ def run_transformer_block(
         running the Transformer block on the input features while using RoPE.
     """
     token_positions = torch.arange(in_features.shape[1])
-    token_positions_expanded = rearrange("seq -> batch seq", token_positions, batch=in_features.shape[0])
+    token_positions_expanded = einx.id("seq -> batch seq", token_positions, batch=in_features.shape[0])
 
     transformer_block = TransformerBlock(
         d_model=d_model,
@@ -398,7 +398,7 @@ def run_transformer_lm(
         next-word distribution for each token.
     """
     token_positions = torch.arange(in_indices.shape[1])
-    token_positions_expanded = rearrange("seq -> batch seq", token_positions, batch=in_indices.shape[0])
+    token_positions_expanded = einx.id("seq -> batch seq", token_positions, batch=in_indices.shape[0])
     transformer = TransformerLM(
         vocab_size=vocab_size,
         context_length=context_length,

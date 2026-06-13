@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from einops import einsum
-from einx import rearrange, dot
+from einx import dot
+import einx
 from jaxtyping import Float
 from cs336_basics.transformer import softmax, Linear, RotaryPositionalEmbedding
 
@@ -62,13 +63,13 @@ class CausalMultiHeadedSelfAttention(nn.Module):
         ).tensor_split(3, -1)
 
         # one of the culprit: location of h in input
-        Q = rearrange("... seq (h d_k) -> ... h seq d_k", q, h=self.num_heads)
-        K = rearrange("... seq (h d_k) -> ... h seq d_k", k, h=self.num_heads)
-        V = rearrange("... seq (h d_k) -> ... h seq d_k", v, h=self.num_heads)
+        Q = einx.id("... seq (h d_k) -> ... h seq d_k", q, h=self.num_heads)
+        K = einx.id("... seq (h d_k) -> ... h seq d_k", k, h=self.num_heads)
+        V = einx.id("... seq (h d_k) -> ... h seq d_k", v, h=self.num_heads)
 
         # have to expand token_positions for all the heads to process (batch, seq_len) -> (batch, head, seq_len)
         if token_positions is not None:
-            token_positions_expanded = rearrange("... seq -> ... h seq", token_positions, h=self.num_heads)
+            token_positions_expanded = einx.id("... seq -> ... h seq", token_positions, h=self.num_heads)
 
             Q = self.rope.forward(Q, token_positions_expanded)
             K = self.rope.forward(K, token_positions_expanded)
@@ -79,7 +80,7 @@ class CausalMultiHeadedSelfAttention(nn.Module):
         output = scaled_dot_product_attention(Q, K, V, causal_mask)
 
         # Combine values from all the heads (i.e. just reshape)
-        O_concat = rearrange("... h seq d_k -> ... seq (h d_k)", output)
+        O_concat = einx.id("... h seq d_k -> ... seq (h d_k)", output)
 
         return self.output_proj(O_concat)
 
