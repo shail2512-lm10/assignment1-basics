@@ -27,7 +27,6 @@ class AdamW(torch.optim.Optimizer):
             eps = group["eps"]
 
             for p in group["params"]:
-                print(p)
                 if p.grad is None:
                     continue
                 state = self.state[p] # Get state associated with p.
@@ -68,7 +67,6 @@ def gradient_clipping(params: Iterable[torch.nn.Parameter], max_l2_norm: float) 
         return torch.tensor(0.0)
 
     total_norm = LA.matrix_norm(torch.concat(grads), 2)
-    print(total_norm)
 
     if total_norm > max_l2_norm:
         # Scale all gradients by the same factor

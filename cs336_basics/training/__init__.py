@@ -1,6 +1,6 @@
 from .loss import *
 from .optimizer import *
-from .checkpoit import *
+from .checkpoint import *
 from .data import *
 from .config import (
     TrainerConfig,

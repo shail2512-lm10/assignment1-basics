@@ -15,7 +15,7 @@ from cs336_basics.training.config import TrainerConfig
 from cs336_basics.training.loss import cross_entropy_loss
 from cs336_basics.training.optimizer import AdamW, cosine_lr_schedule, gradient_clipping
 from cs336_basics.training.data import get_batch_dataloader
-from cs336_basics.training.checkpoit import save_checkpoint, load_checkpoint
+from cs336_basics.training.checkpoint import save_checkpoint, load_checkpoint
 from cs336_basics.training.experiment_tracker import ExperimentTracker
 
 
