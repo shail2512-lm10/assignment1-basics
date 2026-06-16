@@ -177,8 +177,11 @@ class PreTokenizer:
             for i in range(len(boundaries) - 1)
         ]
 
-        with Pool(processes=num_workers) as pool:
-            results = pool.map(PreTokenizer._pretokenize_chunk_encode, chunks)
+        if num_workers is None or num_workers <= 1 or len(chunks) <= 1:
+            results = [PreTokenizer._pretokenize_chunk_encode(chunk) for chunk in chunks]
+        else:
+            with Pool(processes=num_workers) as pool:
+                results = pool.map(PreTokenizer._pretokenize_chunk_encode, chunks)
 
         pre_tokenized_word_bytes = []
         for result in results:

@@ -19,6 +19,7 @@ class Tokenizer:
 
         self.inverse_vocab = {v: k for k, v in self.vocab.items()}
         self.merges_dict = {tup: idx for idx, tup in enumerate(self.merges)}
+        self._word_cache: dict[bytes, tuple[int, ...]] = {}
 
 
     @classmethod
@@ -57,47 +58,45 @@ class Tokenizer:
         return cls(vocab, merges, special_tokens)
 
     
+    def _encode_word(self, word: bytes) -> tuple[int, ...]:
+        if word in self._word_cache:
+            return self._word_cache[word]
+
+        if word in self.inverse_vocab:
+            token_ids = (self.inverse_vocab[word],)
+            self._word_cache[word] = token_ids
+            return token_ids
+
+        word_parts = [bytes([b]) for b in word]
+
+        while len(word_parts) > 1:
+            best_pair_idx = None
+            best_rank = float("inf")
+
+            for idx, pair in enumerate(zip(word_parts, word_parts[1:])):
+                rank = self.merges_dict.get(pair, float("inf"))
+                if rank < best_rank:
+                    best_pair_idx = idx
+                    best_rank = rank
+
+            if best_pair_idx is None or best_rank == float("inf"):
+                break
+
+            word_parts[best_pair_idx] = word_parts[best_pair_idx] + word_parts[best_pair_idx + 1]
+            del word_parts[best_pair_idx + 1]
+
+        token_ids = tuple(self.inverse_vocab[w] for w in word_parts)
+        self._word_cache[word] = token_ids
+        return token_ids
+
+    
     def encode(self, text: str) -> list[int]:
-        pre_tokenized_word_bytes = PreTokenizer.pretokenize_encode(text, self.special_tokens, desired_num_chunks=64, num_workers=4)
+        pre_tokenized_word_bytes = PreTokenizer.pretokenize_encode(text, self.special_tokens, desired_num_chunks=1, num_workers=1)
         # print("Pre-tokenized byte sequences:", pre_tokenized_word_bytes)  # Debugging statement
         # Convert pre-tokenized byte sequences to token IDs
         encoded_text = []
         for word in pre_tokenized_word_bytes:
-            if word in self.inverse_vocab:
-                token_id = self.inverse_vocab[word]
-                encoded_text.append(token_id)
-            else:
-                word_byte = [bytes([b]) for b in word]
-                pairs = list(zip(word_byte[:], word_byte[1:]))
-                for pair in pairs:
-                    if pair in self.merges:
-                        is_in_merges = True
-                        break
-                    else:
-                        is_in_merges = False
-
-                while len(word_byte) > 1 and is_in_merges:
-                
-                    pairs_stats = {p: (id, self.merges_dict[p] if p in self.merges else float('inf')) for id, p in enumerate(pairs)}
-                    merge_pair = min(pairs_stats.keys(), key=lambda k: pairs_stats[k][1])
-                    merge_token, merge_id = merge_pair[0] + merge_pair[1], pairs_stats[merge_pair][0]
-                    word_byte[merge_id] = merge_token
-                    del word_byte[merge_id + 1]
-
-                    pairs = list(zip(word_byte[:], word_byte[1:]))
-                    for pair in pairs:
-                        if pair in self.merges:
-                            is_in_merges = True
-                            break
-                        else:
-                            is_in_merges = False
-
-                # Now convert the final remaining each byte sequence to token ID
-                for w in word_byte:
-                    if w in self.inverse_vocab:
-                        encoded_text.append(self.inverse_vocab[w])
-                    else:
-                        raise ValueError(f"Unknown token: {w}")
+            encoded_text.extend(self._encode_word(word))
 
 
         return encoded_text

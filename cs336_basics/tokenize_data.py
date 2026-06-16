@@ -1,5 +1,6 @@
 import argparse
 import os
+import tempfile
 
 import numpy as np
 from tqdm import tqdm
@@ -13,49 +14,59 @@ def tokenize_file(tokenizer: Tokenizer, input_path: str, output_path: str, chunk
     file_size = os.path.getsize(input_path)
     print(f"Tokenizing {input_path} ({file_size / 1e9:.1f} GB)...")
 
-    all_tokens = []
     buffer = ""
-    bytes_processed = 0
+    num_tokens = 0
+    dtype = np.uint16 if len(tokenizer.vocab) <= 65536 else np.uint32
 
-    with open(input_path, encoding="utf-8") as f:
-        with tqdm(total=file_size, unit="B", unit_scale=True, desc="Tokenizing") as pbar:
-            while True:
-                chunk = f.read(chunk_size)
-                if not chunk:
-                    break
+    output_dir = os.path.dirname(os.path.abspath(output_path)) or "."
+    temp_file = tempfile.NamedTemporaryFile(dir=output_dir, prefix=".tokens-", suffix=".bin", delete=False)
+    temp_path = temp_file.name
 
-                buffer += chunk
+    def write_tokens(tokens: list[int]) -> None:
+        nonlocal num_tokens
+        if not tokens:
+            return
+        np.asarray(tokens, dtype=dtype).tofile(temp_file)
+        num_tokens += len(tokens)
 
-                # Find the last newline to split safely
-                last_newline = buffer.rfind("\n")
+    try:
+        with open(input_path, encoding="utf-8") as f:
+            with tqdm(total=file_size, unit="B", unit_scale=True, desc="Tokenizing") as pbar:
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
 
-                if last_newline != -1:
-                    # Process everything up to and including the last newline
-                    to_process = buffer[: last_newline + 1]
-                    buffer = buffer[last_newline + 1 :]
+                    buffer += chunk
 
-                    tokens = tokenizer.encode(to_process)
-                    all_tokens.extend(tokens)
+                    # Find the last newline to split safely
+                    last_newline = buffer.rfind("\n")
 
-                chunk_bytes = len(chunk.encode("utf-8"))
-                bytes_processed += chunk_bytes
-                pbar.update(chunk_bytes)
+                    if last_newline != -1:
+                        # Process everything up to and including the last newline
+                        to_process = buffer[: last_newline + 1]
+                        buffer = buffer[last_newline + 1 :]
 
-    # Process any remaining buffer
-    if buffer:
-        tokens = tokenizer.encode(buffer)
-        all_tokens.extend(tokens)
+                        write_tokens(tokenizer.encode(to_process))
 
-    max_id = max(all_tokens) if all_tokens else 0
-    dtype = np.uint16 if max_id < 65536 else np.uint32
+                    pbar.update(len(chunk.encode("utf-8")))
 
-    tokens_array = np.array(all_tokens, dtype=dtype)
+        # Process any remaining buffer
+        if buffer:
+            write_tokens(tokenizer.encode(buffer))
 
-    print(f"  {len(tokens_array):,} tokens")
-    print(f"  Dtype: {dtype}")
+        temp_file.close()
+        tokens_array = np.memmap(temp_path, dtype=dtype, mode="r", shape=(num_tokens,))
 
-    np.save(output_path, tokens_array)
-    print(f"  Saved to {output_path}")
+        print(f"  {num_tokens:,} tokens")
+        print(f"  Dtype: {dtype}")
+
+        np.save(output_path, tokens_array)
+        print(f"  Saved to {output_path}")
+    finally:
+        temp_file.close()
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def main():
@@ -67,7 +78,7 @@ def main():
     parser.add_argument(
         "--special-tokens", type=str, nargs="*", default=["<|endoftext|>"], help="Special tokens to use"
     )
-    parser.add_argument("--chunk-size", type=int, default=1_000_000, help="Chunk size in characters")
+    parser.add_argument("--chunk-size", type=int, default=8_000_000, help="Chunk size in characters")
 
     args = parser.parse_args()
 
