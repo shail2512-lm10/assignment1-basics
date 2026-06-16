@@ -33,7 +33,7 @@ from pathlib import Path
 
 import torch
 
-from cs336_basics.training import Trainer, TrainerConfig
+from cs336_basics.training import Trainer, TrainerConfig, load_config
 
 
 # Configure logging
@@ -310,41 +310,6 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_config(config_path: str) -> TrainerConfig:
-    """
-    Load configuration from JSON or YAML file.
-    
-    Args:
-        config_path: Path to config file (JSON or YAML)
-        
-    Returns:
-        TrainerConfig instance
-        
-    Raises:
-        FileNotFoundError: If config file doesn't exist
-        ValueError: If config file format is not recognized
-    """
-    config_path = Path(config_path)
-    
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-    
-    logger.info(f"Loading configuration from {config_path}")
-    
-    suffix = config_path.suffix.lower()
-    
-    if suffix == ".json":
-        with open(config_path) as f:
-            config = TrainerConfig.from_json(f)
-    elif suffix in [".yaml", ".yml"]:
-        with open(config_path) as f:
-            config = TrainerConfig.from_yaml(f)
-    else:
-        raise ValueError(f"Unsupported config format: {suffix}")
-    
-    return config
-
-
 def apply_overrides(config: TrainerConfig, args: argparse.Namespace) -> None:
     """
     Apply command-line argument overrides to the configuration.
@@ -502,6 +467,7 @@ def main():
     
     try:
         # Load configuration
+        logger.info(f"Loading configuration from {args.config}")
         config = load_config(args.config)
         
         # Apply command-line overrides

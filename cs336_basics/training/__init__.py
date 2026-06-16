@@ -10,5 +10,6 @@ from .config import (
     SchedulerConfig,
     TrainingConfig,
     CheckpointConfig,
+    load_config,
 )
 from .trainer import Trainer

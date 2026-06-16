@@ -177,3 +177,36 @@ class TrainerConfig:
         lines.append(f"  experiment_tracking={self.experiment_tracking}")
         lines.append(")")
         return "\n".join(lines)
+
+
+def load_config(config_path: str) -> TrainerConfig:
+    """
+    Load configuration from JSON or YAML file.
+    
+    Args:
+        config_path: Path to config file (JSON or YAML)
+        
+    Returns:
+        TrainerConfig instance
+        
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        ValueError: If config file format is not recognized
+    """
+    config_path = Path(config_path)
+    
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    suffix = config_path.suffix.lower()
+    
+    if suffix == ".json":
+        with open(config_path) as f:
+            config = TrainerConfig.from_json(f)
+    elif suffix in [".yaml", ".yml"]:
+        with open(config_path) as f:
+            config = TrainerConfig.from_yaml(f)
+    else:
+        raise ValueError(f"Unsupported config format: {suffix}")
+    
+    return config

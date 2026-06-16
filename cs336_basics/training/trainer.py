@@ -55,7 +55,13 @@ class Trainer:
             self.model = self._create_model_from_config()
         else:
             self.model = model
+
         self.model = self.model.to(self.device).to(self.torch_dtype)
+
+        if self.device == "mps":
+            self.model = torch.compile(self.model, backend="aot_eager")
+        else:
+            self.model = torch.compile(self.model)
         
         # Initialize optimizer
         self.optimizer = self._create_optimizer()
