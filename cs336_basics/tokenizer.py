@@ -58,7 +58,7 @@ class Tokenizer:
 
     
     def encode(self, text: str) -> list[int]:
-        pre_tokenized_word_bytes = PreTokenizer.pretokenize_encode(text, self.special_tokens, desired_num_chunks=64)
+        pre_tokenized_word_bytes = PreTokenizer.pretokenize_encode(text, self.special_tokens, desired_num_chunks=64, num_workers=4)
         # print("Pre-tokenized byte sequences:", pre_tokenized_word_bytes)  # Debugging statement
         # Convert pre-tokenized byte sequences to token IDs
         encoded_text = []

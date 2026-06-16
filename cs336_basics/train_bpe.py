@@ -123,9 +123,11 @@ class TrainTokenizer:
         input_path: str,
         vocab_size: int,
         special_tokens: list[str],
+        num_workers: int = 4,
+        num_chunks: int = 4
     ) -> tuple[Vocab, Merges]:
         """Train a BPE tokenizer and return vocabulary and merges."""
-        words, word_freq, pair_counts, pair_to_words = self.pre_tokenizer.pretokenize_train(input_path, special_tokens, 4, 4)
+        words, word_freq, pair_counts, pair_to_words = self.pre_tokenizer.pretokenize_train(input_path, special_tokens, num_workers, num_chunks)
         vocab = TrainTokenizer.__build_initial_vocab(special_tokens)
         merges: Merges = []
 
