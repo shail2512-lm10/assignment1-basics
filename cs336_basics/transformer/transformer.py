@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from jaxtyping import Float
-from cs336_basics.transformer import CausalMultiHeadedSelfAttention, RMSNorm, SwiGLU, Embedding, Linear
+import einx
+from cs336_basics.transformer import CausalMultiHeadedSelfAttention, RMSNorm, SwiGLU, Embedding, Linear, softmax
 
 class TransformerBlock(nn.Module):
     def __init__(
@@ -63,6 +64,7 @@ class TransformerLM(nn.Module):
         self.token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model, device=device, dtype=dtype)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size)
         self.ln_final = RMSNorm(d_model=d_model, device=device, dtype=dtype)
+        self.context_length = context_length
         
         self.layers = nn.ModuleList(
             [
@@ -92,3 +94,73 @@ class TransformerLM(nn.Module):
         logits = self.lm_head(self.ln_final(x))
 
         return logits
+
+    @torch.inference_mode()
+    def generate(
+            self,
+            input_ids: Float[Tensor, "... seq"],
+            max_tokens: int,
+            eos_token_id: int,
+            temperature: float | None = None,
+            top_p: float | None = None
+    ) -> list:
+        
+        batch_size = input_ids.shape[0]
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=input_ids.device)
+
+        for _ in range(max_tokens):
+            if input_ids.shape[-1] > self.context_length:
+                input_ids_cond = input_ids[..., -self.context_length:]
+            else:
+                input_ids_cond = input_ids
+
+            token_positions = torch.arange(input_ids_cond.shape[-1])
+            if len(input_ids_cond.shape) > 2:
+                token_positions = einx.id("seq -> batch seq", token_positions, batch=input_ids_cond.shape[0])
+
+            logits: Float[Tensor, "... seq vocab"] = self.forward(input_ids_cond, token_positions)
+
+            next_token_logits: Float[Tensor, "... vocab"] = logits[..., -1, :]
+
+            if temperature == 0:
+                next_token_id = torch.argmax(next_token_logits, dim=-1)
+            else:
+                next_token_logits = (next_token_logits / temperature) if temperature else next_token_logits
+
+                probs = softmax(next_token_logits, dimension=-1)
+
+                if top_p is not None and 0 < top_p < 1:
+                    sorted_probs, sorted_indices = torch.sort(probs, descending=True, dim=-1)
+                    cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+
+                    sorted_indices_to_remove = cumulative_probs > top_p
+                    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                    sorted_indices_to_remove[..., 0] = False
+
+                    sorted_probs[sorted_indices_to_remove] = 0.0
+                    sorted_probs = sorted_probs / sorted_probs.sum(dim=-1, keepdim=True)
+
+                    sampled_sorted_idx: Float[Tensor, " batch"] = torch.multinomial(sorted_probs, num_samples=1).squeeze(-1)
+
+                    next_token_id = sorted_indices[torch.arange(sorted_indices.shape[0]), sampled_sorted_idx]
+
+            # Freeze finished sequences: replace their token with EOS
+            next_token_id[finished] = eos_token_id
+    
+            # Update which sequences are now finished
+            finished |= (next_token_id == eos_token_id)
+
+            input_ids = torch.cat((input_ids, next_token_id.unsqueeze(-1)), dim=-1)
+
+            if finished.all():
+                break
+
+            outputs = []
+            for i in range(batch_size):
+                seq = input_ids[i]
+                # Find first EOS and truncate
+                eos_positions = (seq == eos_token_id).nonzero(as_tuple=True)[0]
+                end = eos_positions[0].item() if len(eos_positions) > 0 else len(seq)
+                outputs.append(seq[:end])
+
+        return outputs
