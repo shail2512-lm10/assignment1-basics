@@ -3,6 +3,8 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 
+from cs336_basics.transformer import TransformerBlock
+
 from .adapters import (
     run_embedding,
     run_linear,
@@ -171,6 +173,16 @@ def test_transformer_block(numpy_snapshot, ts_state_dict, in_embeddings, d_model
         actual_output,
         atol=1e-4,
     )
+
+
+def test_transformer_block_bfloat16_input_casting():
+    x = torch.randn(2, 4, 8, dtype=torch.float32)
+    block = TransformerBlock(d_model=8, num_heads=2, d_ff=16, max_seq_len=4, theta=1000, dtype=torch.bfloat16)
+
+    output = block(x)
+
+    assert output.dtype == torch.bfloat16
+    assert output.shape == x.shape
 
 
 def test_rmsnorm(numpy_snapshot, ts_state_dict, in_embeddings):

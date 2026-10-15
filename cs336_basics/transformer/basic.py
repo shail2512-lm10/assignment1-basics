@@ -47,6 +47,7 @@ class Linear(nn.Module):
         FLOPs:
             2 * batch_size * seq_len * d_in * d_out
         """
+        x = x.to(self.weight.dtype)
         return einsum(x, self.weight, "... d_in, d_out d_in -> ... d_out")
     
 
@@ -114,9 +115,9 @@ class SwiGLU(nn.Module):
     ):
         super().__init__()
 
-        self.w1 = Linear(d_model, d_ff)
-        self.w2 = Linear(d_ff, d_model)
-        self.w3 = Linear(d_model, d_ff)
+        self.w1 = Linear(d_model, d_ff, device=device, dtype=dtype)
+        self.w2 = Linear(d_ff, d_model, device=device, dtype=dtype)
+        self.w3 = Linear(d_model, d_ff, device=device, dtype=dtype)
         
     
     def forward(self, x: Float[Tensor, "... seq d_model"]) -> Float[Tensor, "... seq d_model"]:
@@ -169,7 +170,8 @@ class RotaryPositionalEmbedding(nn.Module):
 
         # Convert x = [1,2,3,4,5,6,7,8] into x_inv = [-2,1,-4,3,-6,5,-8,7]
         x1 = einx.id("... (pairs p) -> ... pairs p", x, p=2)
-        x2 = flip("... [p]", x1, p=2) * torch.tensor([-1,1])
+        pair_signs = torch.tensor([-1, 1], device=x.device, dtype=x.dtype)
+        x2 = flip("... [p]", x1, p=2) * pair_signs
         x_inv: Float[Tensor, "... seq d_k"] = einx.id("... pair p -> ... (pair p)", x2)
 
         # for token position m:
@@ -182,7 +184,9 @@ class RotaryPositionalEmbedding(nn.Module):
 
 
 def softmax(x: Float[Tensor, "... seq d_k"], dimension: int) -> Float[Tensor, "... seq d_k"]:
-    max_val = x.max(dim=dimension, keepdim=True).values
-    exp_x = torch.exp(x - max_val)
-
-    return exp_x / exp_x.sum(dim=dimension, keepdim=True)
+    in_dtype = x.dtype
+    x_float = x.to(torch.float32)
+    max_val = x_float.max(dim=dimension, keepdim=True).values
+    exp_x = torch.exp(x_float - max_val)
+    out = exp_x / exp_x.sum(dim=dimension, keepdim=True)
+    return out.to(in_dtype)

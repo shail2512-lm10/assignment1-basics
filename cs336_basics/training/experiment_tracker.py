@@ -110,7 +110,7 @@ class ExperimentTracker:
             wandb.init(**config)
             
             if tags:
-                wandb.config.update(tags)
+                wandb.config.update(tags, allow_val_change=True)
             
             self.callbacks["wandb"] = WandBCallback()
             logger.info("Initialized Weights & Biases tracking")

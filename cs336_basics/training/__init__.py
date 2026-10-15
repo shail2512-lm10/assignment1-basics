@@ -9,6 +9,7 @@ from .config import (
     OptimizerConfig,
     SchedulerConfig,
     TrainingConfig,
+    LRFinderConfig,
     CheckpointConfig,
     load_config,
 )

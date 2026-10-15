@@ -38,6 +38,7 @@
     "gradient_accumulation_steps": 1,
     "gradient_clip_val": 1.0,
     "val_check_interval": 500,
+    "max_val_batches": 100,
     "save_interval": 5000,
     "log_interval": 10,
     "device": "cuda",

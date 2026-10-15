@@ -5,15 +5,20 @@ from cs336_basics.transformer.transformer import TransformerLM
 from cs336_basics.training.config import load_config
 
 # Model config - match training
-config = load_config("configs/default_config.json")
+config = load_config("configs/default_config.yaml")
 cfg = config.model
 
 def main():
-    device = "mps"
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
 
     tokenizer = Tokenizer.from_files(
-        vocab_filepath="results/TinyStoriesV2_GPT4_train_vocab.pkl",
-        merges_filepath="results/TinyStoriesV2_GPT4_train_merges.pkl",
+        vocab_path="data/tinystories_vocab.json",
+        merges_path="data/tinystories_merges.txt",
         special_tokens=["<|endoftext|>"],
     )
     eos_token_id = tokenizer.inverse_vocab[b"<|endoftext|>"]
@@ -26,13 +31,13 @@ def main():
         num_heads=cfg.num_heads,
         d_ff=cfg.d_ff,
         theta=cfg.theta,
-        device=device,
     )
 
-    checkpoint = torch.load("./checkpoints/checkpoint_final.pt", map_location=device)
+    checkpoint = torch.load("./checkpoints/checkpoint-epoch0-step5000-final.pt", map_location="cpu")
     # Strip "_orig_mod." prefix from keys (from torch.compile)
     state_dict = {k.replace("_orig_mod.", ""): v for k, v in checkpoint["model"].items()}
     model.load_state_dict(state_dict)
+    model = model.to(device)
     model.eval()
 
     print(f"Loaded model with {sum(p.numel() for p in model.parameters()):,} parameters")
@@ -47,8 +52,8 @@ def main():
         print(f"\n=== Temperature: {temp}, Top-p: {top_p} ===")
 
         output_ids = model.generate(
-            input_ids,
-            max_new_tokens=256,
+            input_ids=input_ids,
+            max_tokens=256,
             temperature=temp,
             top_p=top_p,
             eos_token_id=eos_token_id,
@@ -56,7 +61,7 @@ def main():
 
         generated_text = tokenizer.decode(output_ids[0].tolist())
         print(generated_text)
-        print(f"\nTokens generated: {output_ids.shape[1]}")
+        print(f"\nTokens generated: {len(output_ids[0])}")
 
 if __name__ == "__main__":
     main()

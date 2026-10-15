@@ -13,6 +13,11 @@ class AdamW(torch.optim.Optimizer):
             weight_decay: float = 0.01,
             eps: float = 1e-8
     ):
+        lr = float(lr)
+        betas = tuple(float(beta) for beta in betas)
+        weight_decay = float(weight_decay)
+        eps = float(eps)
+        
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
         defaults = {"lr": lr, "betas": betas, "weight_decay": weight_decay, "eps": eps}
@@ -64,9 +69,9 @@ def gradient_clipping(params: Iterable[torch.nn.Parameter], max_l2_norm: float) 
     grads = [p.grad.detach() for p in params if p.grad is not None]
 
     if len(grads) == 0:
-        return torch.tensor(0.0)
+        return
 
-    total_norm = LA.matrix_norm(torch.concat(grads), 2)
+    total_norm = LA.vector_norm(torch.cat([g.reshape(-1) for g in grads]), 2)
 
     if total_norm > max_l2_norm:
         # Scale all gradients by the same factor

@@ -114,11 +114,6 @@ def parse_arguments() -> argparse.Namespace:
         help="Batch size",
     )
     parser.add_argument(
-        "--context-length",
-        type=int,
-        help="Context/sequence length for training",
-    )
-    parser.add_argument(
         "--num-workers",
         type=int,
         help="Number of data loading workers",
@@ -154,6 +149,54 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         help="Number of warmup steps",
     )
+
+    # Learning rate finder
+    parser.add_argument(
+        "--auto-lr-find",
+        action="store_true",
+        help="Run a PyTorch Lightning-style LR finder before training",
+    )
+    parser.add_argument(
+        "--lr-find-min-lr",
+        type=float,
+        help="Minimum LR for LR finder range test",
+    )
+    parser.add_argument(
+        "--lr-find-max-lr",
+        type=float,
+        help="Maximum LR for LR finder range test",
+    )
+    parser.add_argument(
+        "--lr-find-steps",
+        type=int,
+        help="Number of optimizer steps for LR finder",
+    )
+    parser.add_argument(
+        "--lr-find-mode",
+        type=str,
+        choices=["exponential", "linear"],
+        help="LR finder sweep mode",
+    )
+    parser.add_argument(
+        "--lr-find-early-stop-threshold",
+        type=float,
+        help="Stop LR finder when loss exceeds threshold times the best loss",
+    )
+    parser.add_argument(
+        "--lr-find-skip-begin",
+        type=int,
+        help="Number of initial LR finder points to skip for suggestion",
+    )
+    parser.add_argument(
+        "--lr-find-skip-end",
+        type=int,
+        help="Number of final LR finder points to skip for suggestion",
+    )
+    parser.add_argument(
+        "--lr-find-no-update",
+        action="store_true",
+        help="Run LR finder but do not update optimizer.lr or scheduler.lr_max",
+    )
     
     # Training parameters
     parser.add_argument(
@@ -165,6 +208,11 @@ def parse_arguments() -> argparse.Namespace:
         "--max-steps",
         type=int,
         help="Maximum number of training steps (overrides epochs if set)",
+    )
+    parser.add_argument(
+        "--max-duration-minutes",
+        type=float,
+        help="Maximum wall-clock training duration in minutes before final validation/checkpoint",
     )
     parser.add_argument(
         "--log-interval",
@@ -180,6 +228,11 @@ def parse_arguments() -> argparse.Namespace:
         "--val-check-interval",
         type=int,
         help="Validation check interval (steps)",
+    )
+    parser.add_argument(
+        "--max-val-batches",
+        type=int,
+        help="Maximum validation batches per validation check; use a negative value for full validation",
     )
     parser.add_argument(
         "--gradient-accumulation-steps",
@@ -235,8 +288,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--tracking-backend",
         type=str,
-        choices=["wandb", "mlflow", "tensorboard"],
-        help="Experiment tracking backend",
+        help="Experiment tracking backend, or comma-separated backends such as wandb,tensorboard",
     )
     parser.add_argument(
         "--project-name",
@@ -359,18 +411,42 @@ def apply_overrides(config: TrainerConfig, args: argparse.Namespace) -> None:
         config.scheduler.name = args.scheduler
     if args.warmup_steps is not None:
         config.scheduler.warmup_steps = args.warmup_steps
+
+    # LR finder overrides
+    if args.auto_lr_find:
+        config.lr_finder.enabled = True
+    if args.lr_find_min_lr is not None:
+        config.lr_finder.min_lr = args.lr_find_min_lr
+    if args.lr_find_max_lr is not None:
+        config.lr_finder.max_lr = args.lr_find_max_lr
+    if args.lr_find_steps is not None:
+        config.lr_finder.num_training_steps = args.lr_find_steps
+    if args.lr_find_mode is not None:
+        config.lr_finder.mode = args.lr_find_mode
+    if args.lr_find_early_stop_threshold is not None:
+        config.lr_finder.early_stop_threshold = args.lr_find_early_stop_threshold
+    if args.lr_find_skip_begin is not None:
+        config.lr_finder.skip_begin = args.lr_find_skip_begin
+    if args.lr_find_skip_end is not None:
+        config.lr_finder.skip_end = args.lr_find_skip_end
+    if args.lr_find_no_update:
+        config.lr_finder.update_attr = False
     
     # Training overrides
     if args.max_epochs is not None:
         config.training.max_epochs = args.max_epochs
     if args.max_steps is not None:
         config.training.max_steps = args.max_steps
+    if args.max_duration_minutes is not None:
+        config.training.max_duration_seconds = args.max_duration_minutes * 60
     if args.log_interval is not None:
         config.training.log_interval = args.log_interval
     if args.save_interval is not None:
         config.training.save_interval = args.save_interval
     if args.val_check_interval is not None:
         config.training.val_check_interval = args.val_check_interval
+    if args.max_val_batches is not None:
+        config.training.max_val_batches = None if args.max_val_batches < 0 else args.max_val_batches
     if args.gradient_accumulation_steps is not None:
         config.training.gradient_accumulation_steps = args.gradient_accumulation_steps
     if args.gradient_clip_val is not None:
@@ -496,6 +572,10 @@ def main():
         # Start training
         logger.info("Starting training...")
         trainer.train()
+
+        # LR finder may update optimizer.lr and scheduler.lr_max at training start.
+        if args.save_config:
+            save_config_to_file(config, args.save_config)
         
         # Print summary
         summary = trainer.get_training_summary()

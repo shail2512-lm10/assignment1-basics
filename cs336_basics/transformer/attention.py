@@ -17,7 +17,7 @@ def scaled_dot_product_attention(
     qkT = einsum(Q, K, "... seq1 d_k, ... seq2 d_k -> ... seq1 seq2") / (d_k**0.5)
 
     if mask is not None:
-        qkT = qkT + torch.where(mask, 0, -float('inf'))
+        qkT = qkT + torch.where(mask, torch.zeros_like(qkT), torch.full_like(qkT, float('-inf')))
 
     S = softmax(qkT, dimension=-1)
 
@@ -46,7 +46,7 @@ class CausalMultiHeadedSelfAttention(nn.Module):
         self.output_proj = Linear(d_model, d_model, device=device, dtype=dtype)
 
         if theta and max_seq_len is not None:
-            self.rope = RotaryPositionalEmbedding(theta=theta, d_k=self.d_k, max_seq_len=max_seq_len)
+            self.rope = RotaryPositionalEmbedding(theta=theta, d_k=self.d_k, max_seq_len=max_seq_len, device=device)
 
 
     def forward(
@@ -75,7 +75,7 @@ class CausalMultiHeadedSelfAttention(nn.Module):
             K = self.rope.forward(K, token_positions_expanded)
 
         seq_len = x.shape[-2]
-        causal_mask = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool))
+        causal_mask = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool, device=x.device))
 
         output = scaled_dot_product_attention(Q, K, V, causal_mask)
 
@@ -83,4 +83,3 @@ class CausalMultiHeadedSelfAttention(nn.Module):
         O_concat = einx.id("... h seq d_k -> ... seq (h d_k)", output)
 
         return self.output_proj(O_concat)
-

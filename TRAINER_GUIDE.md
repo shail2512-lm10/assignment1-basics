@@ -201,6 +201,7 @@ trainer.train()
 | gradient_accumulation_steps | int | 1 | Gradient accumulation steps |
 | gradient_clip_val | float | 1.0 | Max gradient norm (null to disable) |
 | val_check_interval | int | 100 | Validation check every N steps |
+| max_val_batches | int | 100 | Maximum validation batches per check (null for full validation set) |
 | save_interval | int | 500 | Save checkpoint every N steps |
 | log_interval | int | 10 | Log metrics every N steps |
 | device | str | "cuda" | Device: "cuda", "cpu" |

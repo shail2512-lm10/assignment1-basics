@@ -34,9 +34,11 @@ class TransformerBlock(nn.Module):
     
     def forward(self, x: Float[Tensor, "... seq d_model"], token_positions: Float[Tensor, "... seq"] | None = None) -> Float[Tensor, "... seq d_model"]:
 
-        # There is no in-place operations on x
-        # Nor there is a shape mismatch after the operations
-        # So no need to use x.clone() for storing residual
+        # The model may receive float32 activations even when the module parameters are
+        # stored in BF16/FP16. Cast the residual stream to the module dtype before any
+        # attention or feed-forward matmuls so the residual adds remain type-consistent.
+        x = x.to(self.ln1.weight.dtype)
+
         residual = x
         y = residual + self.attn(self.ln1(x), token_positions)
 
@@ -62,7 +64,7 @@ class TransformerLM(nn.Module):
         super().__init__()
 
         self.token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model, device=device, dtype=dtype)
-        self.lm_head = Linear(in_features=d_model, out_features=vocab_size)
+        self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype)
         self.ln_final = RMSNorm(d_model=d_model, device=device, dtype=dtype)
         self.context_length = context_length
         
@@ -114,7 +116,7 @@ class TransformerLM(nn.Module):
             else:
                 input_ids_cond = input_ids
 
-            token_positions = torch.arange(input_ids_cond.shape[-1])
+            token_positions = torch.arange(input_ids_cond.shape[-1], device=input_ids.device)
             if len(input_ids_cond.shape) > 2:
                 token_positions = einx.id("seq -> batch seq", token_positions, batch=input_ids_cond.shape[0])
 
@@ -142,7 +144,10 @@ class TransformerLM(nn.Module):
 
                     sampled_sorted_idx: Float[Tensor, " batch"] = torch.multinomial(sorted_probs, num_samples=1).squeeze(-1)
 
-                    next_token_id = sorted_indices[torch.arange(sorted_indices.shape[0]), sampled_sorted_idx]
+                    batch_idxs = torch.arange(sorted_indices.shape[0], device=input_ids.device)
+                    next_token_id = sorted_indices[batch_idxs, sampled_sorted_idx]
+                else:
+                    next_token_id = torch.multinomial(probs, num_samples=1).squeeze(-1)
 
             # Freeze finished sequences: replace their token with EOS
             next_token_id[finished] = eos_token_id
@@ -155,12 +160,12 @@ class TransformerLM(nn.Module):
             if finished.all():
                 break
 
-            outputs = []
-            for i in range(batch_size):
-                seq = input_ids[i]
-                # Find first EOS and truncate
-                eos_positions = (seq == eos_token_id).nonzero(as_tuple=True)[0]
-                end = eos_positions[0].item() if len(eos_positions) > 0 else len(seq)
-                outputs.append(seq[:end])
+        outputs = []
+        for i in range(batch_size):
+            seq = input_ids[i]
+            # Find first EOS and truncate
+            eos_positions = (seq == eos_token_id).nonzero(as_tuple=True)[0]
+            end = eos_positions[0].item() if len(eos_positions) > 0 else len(seq)
+            outputs.append(seq[:end])
 
         return outputs

@@ -15,6 +15,12 @@ class OptimizerConfig:
     betas: tuple = (0.9, 0.999)
     weight_decay: float = 0.01
     eps: float = 1e-8
+    
+    def __post_init__(self) -> None:
+        self.lr = float(self.lr)
+        self.betas = tuple(float(beta) for beta in self.betas)
+        self.weight_decay = float(self.weight_decay)
+        self.eps = float(self.eps)
 
 
 @dataclass
@@ -25,6 +31,12 @@ class SchedulerConfig:
     lr_min: float = 0.0
     warmup_steps: int = 1000
     total_steps: int = 10000
+    
+    def __post_init__(self) -> None:
+        self.lr_max = float(self.lr_max)
+        self.lr_min = float(self.lr_min)
+        self.warmup_steps = int(self.warmup_steps)
+        self.total_steps = int(self.total_steps)
 
 
 @dataclass
@@ -57,14 +69,42 @@ class TrainingConfig:
     """Configuration for training loop."""
     max_epochs: int = 10
     max_steps: int | None = None  # If set, overrides max_epochs
+    max_duration_seconds: float | None = None  # If set, stop training after this many seconds
     gradient_accumulation_steps: int = 1
     gradient_clip_val: float | None = 1.0
-    val_check_interval: int = 100  # Check validation every N steps
+    val_check_interval: int | None = 100  # Check validation every N steps; <=0 disables periodic validation
+    max_val_batches: int | None = 100  # Limit validation work per check; None runs the full validation set
     save_interval: int = 500
     log_interval: int = 10
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     dtype: str = "float32"  # float32, float16, bfloat16
     seed: int = 42
+
+
+@dataclass
+class LRFinderConfig:
+    """Configuration for a PyTorch Lightning-style learning rate finder."""
+    enabled: bool = False
+    min_lr: float = 1e-8
+    max_lr: float = 1.0
+    num_training_steps: int = 100
+    mode: str = "exponential"  # exponential, linear
+    early_stop_threshold: float | None = 4.0
+    update_attr: bool = True
+    skip_begin: int = 10
+    skip_end: int = 5
+    
+    def __post_init__(self) -> None:
+        self.min_lr = float(self.min_lr)
+        self.max_lr = float(self.max_lr)
+        self.num_training_steps = int(self.num_training_steps)
+        self.mode = self.mode.lower()
+        if self.mode not in {"exponential", "linear"}:
+            raise ValueError(f"Unknown LR finder mode: {self.mode}")
+        if self.early_stop_threshold is not None:
+            self.early_stop_threshold = float(self.early_stop_threshold)
+        self.skip_begin = int(self.skip_begin)
+        self.skip_end = int(self.skip_end)
 
 
 @dataclass
@@ -106,6 +146,7 @@ class TrainerConfig:
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    lr_finder: LRFinderConfig = field(default_factory=LRFinderConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     experiment_tracking: ExperimentTrackingConfig = field(default_factory=ExperimentTrackingConfig)
     
@@ -124,6 +165,8 @@ class TrainerConfig:
             config.scheduler = SchedulerConfig(**config_dict["scheduler"])
         if "training" in config_dict:
             config.training = TrainingConfig(**config_dict["training"])
+        if "lr_finder" in config_dict:
+            config.lr_finder = LRFinderConfig(**config_dict["lr_finder"])
         if "checkpoint" in config_dict:
             config.checkpoint = CheckpointConfig(**config_dict["checkpoint"])
         if "experiment_tracking" in config_dict:
@@ -173,6 +216,7 @@ class TrainerConfig:
         lines.append(f"  optimizer={self.optimizer}")
         lines.append(f"  scheduler={self.scheduler}")
         lines.append(f"  training={self.training}")
+        lines.append(f"  lr_finder={self.lr_finder}")
         lines.append(f"  checkpoint={self.checkpoint}")
         lines.append(f"  experiment_tracking={self.experiment_tracking}")
         lines.append(")")
@@ -204,8 +248,7 @@ def load_config(config_path: str) -> TrainerConfig:
         with open(config_path) as f:
             config = TrainerConfig.from_json(f)
     elif suffix in [".yaml", ".yml"]:
-        with open(config_path) as f:
-            config = TrainerConfig.from_yaml(f)
+            config = TrainerConfig.from_yaml(config_path)
     else:
         raise ValueError(f"Unsupported config format: {suffix}")
     

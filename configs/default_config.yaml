@@ -1,28 +1,28 @@
 # Transformer Model Configuration
 model:
-  vocab_size: 50257
-  d_model: 768
-  num_heads: 12
-  num_layers: 12
-  d_ff: 3072
-  context_length: 1024
+  vocab_size: 32000
+  d_model: 512
+  num_heads: 16
+  num_layers: 4
+  d_ff: 1344
+  context_length: 256
   theta: 10000
-  dropout: 0.1
+  dropout: 0
 
 # Data Loading Configuration
 data:
-  train_data_path: "data/owt_train.txt"
-  valid_data_path: null  # Set to data path for validation
-  batch_size: 32
-  context_length: 512
-  num_workers: 0
-  pin_memory: false
+  train_data_path: "data/tinystories_train.npy"
+  valid_data_path: "data/tinystories_valid.npy"  # Set to data path for validation
+  batch_size: 64
+  context_length: 256
+  num_workers: 10
+  pin_memory: true
   shuffle: true
 
 # Optimizer Configuration
 optimizer:
   name: "adamw"  # Options: adamw, adam, sgd
-  lr: 0.0001
+  lr: 1e-3
   betas: [0.9, 0.999]
   weight_decay: 0.01
   eps: 1e-8
@@ -30,22 +30,23 @@ optimizer:
 # Learning Rate Scheduler Configuration
 scheduler:
   name: "cosine"  # Options: cosine, constant, linear, exponential
-  lr_max: 0.0001
+  lr_max: 1e-3
   lr_min: 0.0
-  warmup_steps: 1000
+  warmup_steps: 200
   total_steps: 10000
 
 # Training Loop Configuration
 training:
-  max_epochs: 10
-  max_steps: null  # Set to override max_epochs
+  max_epochs: 1
+  max_steps: 10000  # Set to override max_epochs
   gradient_accumulation_steps: 1
   gradient_clip_val: 1.0  # Set to null to disable
-  val_check_interval: 100
-  save_interval: 500
+  val_check_interval: 4999
+  max_val_batches: 500  # Set to null to run the full validation set
+  save_interval: 1000
   log_interval: 10
-  device: "cuda"  # Options: cuda, cpu
-  dtype: "float32"  # Options: float32, float16, bfloat16
+  device: "mps"  # Options: cuda, cpu
+  dtype: "bfloat16"  # Options: float32, float16, bfloat16
   seed: 42
 
 # Checkpoint Configuration
@@ -61,7 +62,7 @@ experiment_tracking:
   backend: "wandb,tensorboard"
   project_name: "cs336-basics"
   experiment_name: "transformer-lm-training"
-  run_name: "run-001"
+  run_name: "run-002"
   tags:
     model: "transformer"
     dataset: "tinystories"
@@ -72,4 +73,4 @@ experiment_tracking:
   tensorboard_dir: "runs"
   log_interval: 10
   log_model: false
-  log_gradients": false
+  log_gradients: false
